@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlideCraft — 簡報底圖動態生成與匯出器</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- PptxGenJS for PPTX export -->
+  <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f5f7fa',
+              100: '#eaeef4',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#0f172a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* 客製化滾動條 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    /* 棋盤格背景 */
+    .checkerboard-bg {
+      background-color: #f8fafc;
+      background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+                        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+                        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+    /* 隱藏原生 color input 邊框與內距 */
+    input[type="color"]::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+    input[type="color"]::-webkit-color-swatch {
+      border: none;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans h-screen flex flex-col overflow-hidden select-none">
+
+  <!-- 頂部導航列 -->
+  <header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0 shadow-sm z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-tight tracking-tight text-slate-900 flex items-center gap-2">
+          SlideCraft
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-600 border border-blue-200/60">Pro v2.5</span>
+        </h1>
+        <p class="text-xs text-slate-500">程式動態向量簡報底圖生成平台</p>
+      </div>
+    </div>
+
+    <!-- 頂部快速工具 -->
+    <div class="flex items-center gap-3">
+      <button id="btnRandomize" class="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition duration-150 active:scale-95">
+        <i class="fa-solid fa-dice text-blue-600"></i>
+        <span>隨機靈感 (R)</span>
+      </button>
+
+      <div class="h-6 w-px bg-slate-200 mx-1"></div>
+
+      <!-- 匯出按鈕群 -->
+      <div class="flex items-center gap-1.5">
+        <button id="btnExportPNG" class="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold shadow-sm transition active:scale-95">
+          <i class="fa-regular fa-image text-emerald-600"></i>
+          <span>PNG (高清)</span>
+        </button>
+        <button id="btnExportJPG" class="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold shadow-sm transition active:scale-95">
+          <i class="fa-solid fa-file-image text-amber-600"></i>
+          <span>JPG</span>
+        </button>
+        <button id="btnExportPPTX" class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-medium shadow-md shadow-blue-500/20 transition active:scale-95">
+          <i class="fa-solid fa-file-powerpoint"></i>
+          <span>匯出為 .PPTX</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主工作區域 -->
+  <main class="flex-1 flex overflow-hidden">
+    
+    <!-- 左側面板：風格庫選單 -->
+    <aside class="w-72 bg-white border-r border-slate-200 flex flex-col shrink-0">
+      <div class="p-3 border-b border-slate-100 flex items-center justify-between">
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">風格範本庫 (<span id="styleCount">0</span>)</span>
+        <div class="relative w-36">
+          <i class="fa-solid fa-magnifying-glass absolute left-2 top-2 text-slate-400 text-xs"></i>
+          <input type="text" id="styleSearch" placeholder="搜尋風格..." class="w-full pl-6 pr-2 py-1 text-xs bg-slate-100 rounded-md outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+      </div>
+      
+      <!-- 分類標籤頁 -->
+      <div class="px-3 pt-2 flex gap-1 overflow-x-auto text-xs pb-1" id="categoryFilter">
+        <button data-cat="all" class="cat-pill active px-2.5 py-1 rounded-md font-medium bg-slate-900 text-white">全部</button>
+        <button data-cat="minimal" class="cat-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:bg-slate-100">文青極簡</button>
+        <button data-cat="business" class="cat-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:bg-slate-100">商務科技</button>
+        <button data-cat="artistic" class="cat-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:bg-slate-100">幾何藝術</button>
+        <button data-cat="playful" class="cat-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:bg-slate-100">活潑童趣</button>
+      </div>
+
+      <!-- 風格項目列表 -->
+      <div class="flex-1 overflow-y-auto p-3 space-y-2" id="styleList"></div>
+    </aside>
+
+    <!-- 中間：預覽畫布視窗 -->
+    <section class="flex-1 flex flex-col bg-slate-200/70 p-6 overflow-hidden items-center justify-center relative">
+      
+      <!-- 畫布上方控制浮動條 -->
+      <div class="absolute top-4 bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-slate-200/60 flex items-center gap-4 text-xs z-10">
+        <!-- 比例切換 -->
+        <div class="flex items-center gap-1 font-medium text-slate-700">
+          <span class="text-slate-400 mr-1"><i class="fa-solid fa-crop"></i> 比例:</span>
+          <button id="ratio169" class="ratio-btn px-2.5 py-1 rounded bg-blue-600 text-white shadow-sm font-semibold">16:9 寬螢幕</button>
+          <button id="ratio43" class="ratio-btn px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600">4:3 標準</button>
+        </div>
+
+        <div class="h-4 w-px bg-slate-300"></div>
+
+        <!-- 輔助開關 -->
+        <label class="flex items-center gap-1.5 cursor-pointer text-slate-600 hover:text-slate-900">
+          <input type="checkbox" id="toggleSafeGrid" class="rounded text-blue-600 focus:ring-0">
+          <span>安全網格 & 參考線</span>
+        </label>
+        
+        <label class="flex items-center gap-1.5 cursor-pointer text-slate-600 hover:text-slate-900">
+          <input type="checkbox" id="toggleDemoText" checked class="rounded text-blue-600 focus:ring-0">
+          <span>排版模擬 (Mockup)</span>
+        </label>
+
+        <div class="h-4 w-px bg-slate-300"></div>
+
+        <span class="text-slate-400 font-mono text-[11px]" id="canvasResolutionText">1920 × 1080 px</span>
+      </div>
+
+      <!-- 畫布容器 (自適應縮放) -->
+      <div class="relative w-full h-full flex items-center justify-center p-8">
+        <div id="previewWrapper" class="relative shadow-2xl rounded-lg overflow-hidden border border-slate-300 bg-white transition-all duration-300 max-h-[82vh] max-w-[90%]">
+          <!-- 核心繪製 Canvas -->
+          <canvas id="mainCanvas" class="block w-full h-full object-contain pointer-events-none"></canvas>
+
+          <!-- 覆蓋層：參考線與排版測試層 -->
+          <div id="overlayLayer" class="absolute inset-0 pointer-events-none">
+            <!-- 安全框線 (Safe Area 5%) -->
+            <div id="safeAreaBox" class="hidden absolute inset-[5%] border border-dashed border-sky-400/80 bg-sky-500/5">
+              <span class="absolute top-1 left-1.5 text-[10px] bg-sky-500 text-white px-1.5 py-0.5 rounded font-mono">投影片安全區域 (Safe Area)</span>
+              <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
+                <div class="border-r border-sky-400/40"></div>
+                <div class="border-r border-sky-400/40"></div>
+                <div></div>
+                <div class="border-t border-sky-400/40 col-span-3"></div>
+                <div class="border-t border-sky-400/40 col-span-3"></div>
+              </div>
+            </div>
+
+            <!-- 簡報 Mockup 模擬排版層 -->
+            <div id="mockupContent" class="absolute inset-0 p-12 flex flex-col justify-between transition-opacity duration-200">
+              <div class="max-w-xl">
+                <div class="inline-block px-3 py-1 bg-black/10 backdrop-blur-sm rounded-md text-xs font-semibold tracking-wider uppercase mb-3 text-slate-800" id="mockupBadge">
+                  ANNUAL KEYNOTE REPORT 2026
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight text-slate-900 drop-shadow-sm mb-2" id="mockupTitle">
+                  探索未來的商業想像力
+                </h2>
+                <p class="text-sm lg:text-base text-slate-600 leading-relaxed font-normal" id="mockupSubtitle">
+                  透過動態生成式背景底圖，為您的簡報設計建立更深刻、富有層次感的視覺語言與品牌印象。
+                </p>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-500 pt-6 border-t border-black/10">
+                <div class="flex items-center gap-2 font-medium">
+                  <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                  <span>SlideCraft Studio Production</span>
+                </div>
+                <span class="font-mono">01 / 24</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 提示條 -->
+      <div class="absolute bottom-2 text-[11px] text-slate-400 font-normal">
+        預覽視窗經等比縮放，匯出圖片與 PPTX 時均為原生超清 (HD) 向量繪製
+      </div>
+    </section>
+
+    <!-- 右側面板：細項客製化調控 -->
+    <aside class="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-blue-600"></i>
+          參數自訂面板
+        </h2>
+        <button id="btnResetParams" class="text-xs text-slate-400 hover:text-slate-700" title="重設參數">
+          <i class="fa-solid fa-rotate-left"></i> 重設
+        </button>
+      </div>
+
+      <div class="p-4 space-y-6 text-xs">
+        <!-- 當前風格指示 -->
+        <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-500">當前選擇風格</span>
+            <span id="currentStyleName" class="font-bold text-slate-800 text-sm">文青素雅微光</span>
+          </div>
+          <p id="currentStyleDesc" class="text-slate-400 text-[11px] mt-1 leading-normal">極簡優雅的柔和微光暈染，保留大面積乾淨留白，百搭任何排版。</p>
+        </div>
+
+        <!-- 顏色調色盤區塊 -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="font-semibold text-slate-700 flex items-center gap-1.5">
+              <i class="fa-solid fa-palette text-slate-400"></i> 色彩微調 (4色基調)
+            </label>
+            <button id="btnShuffleColors" class="text-blue-600 hover:text-blue-800 text-[11px] font-medium">
+              <i class="fa-solid fa-shuffle"></i> 隨機選色
+            </button>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2">
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-1 text-center">主底色</span>
+              <input type="color" id="color1" value="#FDFBF7" class="w-full h-9 rounded-lg cursor-pointer border border-slate-200 shadow-sm">
+            </div>
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-1 text-center">層次一</span>
+              <input type="color" id="color2" value="#F4EFE6" class="w-full h-9 rounded-lg cursor-pointer border border-slate-200 shadow-sm">
+            </div>
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-1 text-center">層次二</span>
+              <input type="color" id="color3" value="#D7C4B7" class="w-full h-9 rounded-lg cursor-pointer border border-slate-200 shadow-sm">
+            </div>
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-1 text-center">重點色</span>
+              <input type="color" id="color4" value="#8C6D58" class="w-full h-9 rounded-lg cursor-pointer border border-slate-200 shadow-sm">
+            </div>
+          </div>
+
+          <div class="pt-2">
+            <span class="block text-[11px] text-slate-400 mb-1.5 font-medium">經典預設調色盤：</span>
+            <div class="grid grid-cols-3 gap-1.5" id="presetPalettes"></div>
+          </div>
+        </div>
+
+        <hr class="border-slate-100">
+
+        <!-- 滑桿調整區 -->
+        <div class="space-y-4">
+          <label class="font-semibold text-slate-700 flex items-center gap-1.5">
+            <i class="fa-solid fa-sliders text-slate-400"></i> 圖形幾何調控
+          </label>
+
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-600">圖元密度 / 數量</span>
+              <span class="font-mono text-slate-400" id="valDensity">12</span>
+            </div>
+            <input type="range" id="paramDensity" min="3" max="50" value="12" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+          </div>
+
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-600">元素比例尺度 (Scale)</span>
+              <span class="font-mono text-slate-400" id="valScale">1.0x</span>
+            </div>
+            <input type="range" id="paramScale" min="0.3" max="2.5" step="0.1" value="1.0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+          </div>
+
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-600">旋轉角度 / 漸層向</span>
+              <span class="font-mono text-slate-400" id="valAngle">45°</span>
+            </div>
+            <input type="range" id="paramAngle" min="0" max="360" value="45" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+          </div>
+
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-600">文青磨砂顆粒 (Noise)</span>
+              <span class="font-mono text-slate-400" id="valNoise">15%</span>
+            </div>
+            <input type="range" id="paramNoise" min="0" max="80" value="15" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+          </div>
+
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-600">光暈柔焦程度 (Blur)</span>
+              <span class="font-mono text-slate-400" id="valBlur">0px</span>
+            </div>
+            <input type="range" id="paramBlur" min="0" max="40" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+          </div>
+        </div>
+
+        <hr class="border-slate-100">
+
+        <!-- 亂數種子設定 -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-slate-700">隨機種子碼 (Seed)</span>
+            <button id="btnNewSeed" class="text-xs text-blue-600 hover:underline">
+              <i class="fa-solid fa-arrows-rotate"></i> 換個構圖
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <input type="number" id="paramSeed" value="48291" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-mono text-xs">
+            <button id="btnApplySeed" class="px-3 py-1.5 bg-slate-800 text-white rounded-md text-xs font-medium shrink-0">套用</button>
+          </div>
+        </div>
+
+        <!-- 模擬排版字體明暗顏色切換 -->
+        <div class="pt-2">
+          <span class="block text-slate-600 mb-1.5 font-semibold">排版文字色系</span>
+          <div class="flex gap-2">
+            <button id="mockTextDark" class="flex-1 py-1.5 rounded border border-slate-300 text-slate-800 bg-slate-100 font-medium">深色文字 (黑/灰)</button>
+            <button id="mockTextLight" class="flex-1 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium">淺色文字 (純白)</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- 浮動成功通知 Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-xl bg-slate-900 text-white text-xs font-medium flex items-center gap-2.5 translate-y-20 opacity-0 transition-all duration-300 z-50">
+    <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+    <span id="toastMsg">成功匯出檔案！</span>
+  </div>
+
+  <script>
+    /**
+     * 偽隨機數生成器 (PRNG - Mulberry32)
+     */
+    function createPRNG(seed) {
+      let s = seed >>> 0;
+      return function() {
+        s = (s + 0x6D2B79F5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    /**
+     * 色彩預設集
+     */
+    const PALETTES = [
+      { name: "文青茶褐", colors: ["#FDFBF7", "#F4EFE6", "#D7C4B7", "#8C6D58"] },
+      { name: "極簡岩灰", colors: ["#FAFAFA", "#F1F5F9", "#CBD5E1", "#475569"] },
+      { name: "科技深邃", colors: ["#0B0F19", "#111827", "#1E293B", "#38BDF8"] },
+      { name: "京都和風", colors: ["#FAF8F5", "#EFE8DE", "#A3B899", "#C17C74"] },
+      { name: "夏日微風", colors: ["#F0FDF4", "#DCFCE7", "#BAE6FD", "#0284C7"] },
+      { name: "賽博霓虹", colors: ["#0F172A", "#1E1B4B", "#6366F1", "#F43F5E"] },
+      { name: "溫潤暖陽", colors: ["#FFFBEB", "#FEF3C7", "#FDE68A", "#F59E0B"] },
+      { name: "莫蘭迪藍", colors: ["#F8FAFC", "#E2E8F0", "#94A3B8", "#5A728E"] },
+      { name: "黑金奢華", colors: ["#121212", "#1C1C1C", "#333333", "#EAB308"] }
+    ];
+
+    /**
+     * 風格生成器清單 (26種風格)
+     */
+    const STYLES = [
+      {
+        id: "minimal_gradient",
+        name: "文青素雅微光",
+        cat: "minimal",
+        desc: "極簡優雅的柔和微光暈染，保留大面積乾淨留白，百搭任何排版。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+          const rad = Math.hypot(w, h) * 0.8 * p.scale;
+          const cx = w * (0.8 + (rng() - 0.5) * 0.3);
+          const cy = h * (0.2 + (rng() - 0.5) * 0.3);
+          const grad = ctx.createRadialGradient(cx, cy, 10, cx, cy, rad);
+          grad.addColorStop(0, p.colors[1]);
+          grad.addColorStop(0.5, p.colors[2] + "88");
+          grad.addColorStop(1, p.colors[0] + "00");
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, w, h);
+
+          const grad2 = ctx.createRadialGradient(w * 0.15, h * 0.85, 10, w * 0.15, h * 0.85, rad * 0.5);
+          grad2.addColorStop(0, p.colors[3] + "33");
+          grad2.addColorStop(1, p.colors[0] + "00");
+          ctx.fillStyle = grad2;
+          ctx.fillRect(0, 0, w, h);
+        }
+      },
+      {
+        id: "zen_geometry",
+        name: "日系和風極簡形",
+        cat: "minimal",
+        desc: "以日式侘寂為靈感，大尺度幾何弧線與細線切分，低調雋永。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.save();
+          ctx.fillStyle = p.colors[1];
+          ctx.beginPath();
+          ctx.arc(w * 0.85, h * 0.7, h * 0.65 * p.scale, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = p.colors[2];
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(w * 0.08, h * 0.2);
+          ctx.lineTo(w * 0.08, h * 0.85);
+          ctx.stroke();
+
+          ctx.strokeStyle = p.colors[3];
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(w * 0.08, h * 0.2, 6, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      },
+      {
+        id: "fluid_blobs",
+        name: "有機流體水滴",
+        cat: "artistic",
+        desc: "宛如水彩或流體般的不規則自然輪廓，柔和無拘束。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+          const count = Math.floor(p.density / 2) + 2;
+
+          for (let i = 0; i < count; i++) {
+            const bx = rng() * w;
+            const by = rng() * h;
+            const r = (180 + rng() * 320) * p.scale;
+            ctx.fillStyle = (i % 2 === 0 ? p.colors[1] : p.colors[2]) + "55";
+
+            ctx.beginPath();
+            const points = 7;
+            for (let j = 0; j < points; j++) {
+              const a = (j / points) * Math.PI * 2;
+              const dist = r * (0.8 + rng() * 0.4);
+              const px = bx + Math.cos(a) * dist;
+              const py = by + Math.sin(a) * dist;
+              if (j === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+      },
+      {
+        id: "architectural_grid",
+        name: "建築幾何格網",
+        cat: "business",
+        desc: "秩序嚴謹的結構網格與交錯方塊，適合科技產品與建築工程簡報。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const step = Math.max(30, 110 - p.density * 1.5);
+          ctx.strokeStyle = p.colors[1];
+          ctx.lineWidth = 1;
+
+          for (let x = 0; x < w; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
+          }
+          for (let y = 0; y < h; y += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+          }
+
+          const fills = Math.floor(p.density * 1.2);
+          for (let i = 0; i < fills; i++) {
+            const rx = Math.floor(rng() * (w / step)) * step;
+            const ry = Math.floor(rng() * (h / step)) * step;
+            ctx.fillStyle = rng() > 0.3 ? p.colors[2] + "88" : p.colors[3] + "99";
+            ctx.fillRect(rx, ry, step, step);
+          }
+        }
+      },
+      {
+        id: "bauhaus_shapes",
+        name: "包浩斯立體構成",
+        cat: "artistic",
+        desc: "向經典現代主義致敬：圓形、半圓、矩形與斜角幾何疊加。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.save();
+          const cx = w * 0.78;
+          const cy = h * 0.5;
+
+          ctx.fillStyle = p.colors[1];
+          ctx.fillRect(cx - 200 * p.scale, cy - 250 * p.scale, 350 * p.scale, 500 * p.scale);
+
+          ctx.fillStyle = p.colors[2];
+          ctx.beginPath();
+          ctx.arc(cx, cy, 180 * p.scale, -Math.PI / 2, Math.PI / 2);
+          ctx.fill();
+
+          ctx.strokeStyle = p.colors[3];
+          ctx.lineWidth = 6 * p.scale;
+          ctx.beginPath();
+          ctx.moveTo(w * 0.45, cy + 200 * p.scale);
+          ctx.lineTo(w * 0.95, cy - 220 * p.scale);
+          ctx.stroke();
+
+          ctx.fillStyle = p.colors[3];
+          ctx.beginPath();
+          ctx.arc(w * 0.5, cy - 150 * p.scale, 28 * p.scale, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      },
+      {
+        id: "aurora_wave",
+        name: "柔光極光薄霧",
+        cat: "minimal",
+        desc: "宛如高緯度極光飄拂的平滑色帶，靜謐而深具現代高級感。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const waves = 4;
+          for (let i = 0; i < waves; i++) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(0, h * (0.3 + i * 0.18));
+            
+            for (let x = 0; x <= w; x += 30) {
+              const yOffset = Math.sin((x / w) * Math.PI * 3 + i + (p.angle * Math.PI / 180)) * 70 * p.scale;
+              ctx.lineTo(x, h * (0.4 + i * 0.15) + yOffset);
+            }
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.closePath();
+
+            const c = (i % 2 === 0) ? p.colors[1] : p.colors[2];
+            ctx.fillStyle = c + "55";
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      },
+      {
+        id: "dot_matrix",
+        name: "數位點陣陣列",
+        cat: "business",
+        desc: "經典科技 Dot Matrix，乾淨、精密，工程與軟體簡報首選。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const spacing = Math.max(20, 60 - p.density);
+          const rad = 2 * p.scale;
+
+          for (let x = spacing; x < w; x += spacing) {
+            for (let y = spacing; y < h; y += spacing) {
+              const factor = (x / w) * (y / h);
+              ctx.fillStyle = factor > 0.4 ? p.colors[2] + "88" : p.colors[1] + "55";
+              
+              if (rng() < 0.04) {
+                ctx.fillStyle = p.colors[3];
+                ctx.beginPath();
+                ctx.arc(x, y, rad * 2, 0, Math.PI * 2);
+                ctx.fill();
+                continue;
+              }
+
+              ctx.beginPath();
+              ctx.arc(x, y, rad, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+      },
+      {
+        id: "diagonal_corporate",
+        name: "斜角商業分割",
+        cat: "business",
+        desc: "斜切幾何塊面設計，常規年度報告、商業募資簡報的經典大氣版型。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const angleRad = (p.angle * Math.PI) / 180;
+          const shift = Math.tan(angleRad) * h * 0.3;
+
+          ctx.fillStyle = p.colors[1];
+          ctx.beginPath();
+          ctx.moveTo(w * 0.65 + shift, 0);
+          ctx.lineTo(w, 0);
+          ctx.lineTo(w, h);
+          ctx.lineTo(w * 0.45 - shift, h);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = p.colors[3];
+          ctx.lineWidth = 4 * p.scale;
+          ctx.beginPath();
+          ctx.moveTo(w * 0.61 + shift, 0);
+          ctx.lineTo(w * 0.41 - shift, h);
+          ctx.stroke();
+
+          ctx.fillStyle = p.colors[2] + "88";
+          ctx.fillRect(0, h - 14 * p.scale, w * 0.35, 14 * p.scale);
+        }
+      },
+      {
+        id: "contour_topography",
+        name: "等高線地形圖",
+        cat: "artistic",
+        desc: "綿密起伏的自然地形等高線條，象徵探險、數據分析與地理脈絡。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.strokeStyle = p.colors[1];
+          ctx.lineWidth = 1.5 * p.scale;
+          const rings = Math.floor(p.density * 0.8) + 5;
+          const cx = w * 0.8;
+          const cy = h * 0.6;
+
+          for (let i = 1; i <= rings; i++) {
+            const r = i * (35 * p.scale);
+            ctx.beginPath();
+            const segments = 40;
+            for (let s = 0; s <= segments; s++) {
+              const a = (s / segments) * Math.PI * 2;
+              const distortion = Math.sin(a * 4 + i) * 18 * p.scale + Math.cos(a * 2) * 12;
+              const px = cx + Math.cos(a) * (r + distortion);
+              const py = cy + Math.sin(a) * (r + distortion);
+              if (s === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = (i % 4 === 0) ? p.colors[3] + "AA" : p.colors[2] + "66";
+            ctx.stroke();
+          }
+        }
+      },
+      {
+        id: "memphis_pop",
+        name: "孟菲斯俏皮幾何",
+        cat: "playful",
+        desc: "活潑鮮明的幾何散佈、波浪線與三角形，極適合教育、演講與活動宣傳。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const count = Math.floor(p.density * 1.5) + 8;
+          for (let i = 0; i < count; i++) {
+            const x = rng() * w;
+            const y = rng() * h;
+            const size = (25 + rng() * 45) * p.scale;
+            const type = Math.floor(rng() * 4);
+            const color = p.colors[Math.floor(rng() * 3) + 1];
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(rng() * Math.PI * 2);
+
+            if (type === 0) {
+              ctx.strokeStyle = color;
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+              ctx.stroke();
+            } else if (type === 1) {
+              ctx.fillStyle = color + "CC";
+              ctx.beginPath();
+              ctx.moveTo(0, -size / 2);
+              ctx.lineTo(size / 2, size / 2);
+              ctx.lineTo(-size / 2, size / 2);
+              ctx.closePath();
+              ctx.fill();
+            } else if (type === 2) {
+              ctx.strokeStyle = color;
+              ctx.lineWidth = 5;
+              ctx.beginPath();
+              ctx.moveTo(-size / 2, 0); ctx.lineTo(size / 2, 0);
+              ctx.moveTo(0, -size / 2); ctx.lineTo(0, size / 2);
+              ctx.stroke();
+            } else {
+              ctx.strokeStyle = color;
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              for (let k = 0; k < 4; k++) {
+                ctx.lineTo(k * 10 - 20, (k % 2 === 0 ? -1 : 1) * 8);
+              }
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
+      },
+      {
+        id: "cyber_circuit",
+        name: "賽博晶片電路",
+        cat: "business",
+        desc: "硬派科技電路線路走勢，端點小圓珠與 45 度轉角交錯延伸。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const lines = Math.floor(p.density) + 8;
+          ctx.lineWidth = 2 * p.scale;
+
+          for (let i = 0; i < lines; i++) {
+            let sx = w * (0.6 + rng() * 0.4);
+            let sy = rng() * h;
+            ctx.strokeStyle = rng() > 0.3 ? p.colors[2] + "88" : p.colors[3];
+            ctx.fillStyle = ctx.strokeStyle;
+
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+
+            const segs = 3 + Math.floor(rng() * 3);
+            for (let j = 0; j < segs; j++) {
+              if (j % 2 === 0) {
+                sx -= (40 + rng() * 100) * p.scale;
+              } else {
+                sy += (rng() > 0.5 ? 1 : -1) * (40 + rng() * 60) * p.scale;
+              }
+              ctx.lineTo(sx, sy);
+            }
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(sx, sy, 4 * p.scale, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      },
+      {
+        id: "japanese_seigaiha",
+        name: "日系青海波浪",
+        cat: "artistic",
+        desc: "日本傳統文樣「青海波」，象徵無限平安與平穩祥和之意境。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const r = 45 * p.scale;
+          const rows = Math.ceil(h / (r * 0.7)) + 1;
+          const cols = Math.ceil(w / (r * 2)) + 1;
+
+          ctx.lineWidth = 1.8;
+          ctx.strokeStyle = p.colors[1];
+
+          for (let row = 0; row < rows; row++) {
+            const y = row * (r * 0.6);
+            const offsetX = (row % 2 === 0) ? 0 : r;
+            for (let col = -1; col < cols; col++) {
+              const x = col * (r * 2) + offsetX;
+              for (let layer = 1; layer <= 4; layer++) {
+                ctx.beginPath();
+                ctx.arc(x, y, (r / 4) * layer, Math.PI, 0, false);
+                ctx.strokeStyle = layer === 4 ? p.colors[2] + "99" : p.colors[1] + "77";
+                ctx.stroke();
+              }
+            }
+          }
+        }
+      },
+      {
+        id: "abstract_isometric",
+        name: "等角等距方塊 (Isometric)",
+        cat: "artistic",
+        desc: "2.5D 偽立體方塊排列，呈現立體感強烈的現代幾何景觀。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const boxSize = 35 * p.scale;
+          const count = Math.floor(p.density * 1.5) + 10;
+          const anchorX = w * 0.75;
+          const anchorY = h * 0.5;
+
+          function drawCube(x, y, sz) {
+            ctx.fillStyle = p.colors[1];
+            ctx.beginPath();
+            ctx.moveTo(x, y - sz);
+            ctx.lineTo(x + sz * 0.866, y - sz * 0.5);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x - sz * 0.866, y - sz * 0.5);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = p.colors[2];
+            ctx.beginPath();
+            ctx.moveTo(x - sz * 0.866, y - sz * 0.5);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x, y + sz);
+            ctx.lineTo(x - sz * 0.866, y + sz * 0.5);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = p.colors[3];
+            ctx.beginPath();
+            ctx.moveTo(x + sz * 0.866, y - sz * 0.5);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x, y + sz);
+            ctx.lineTo(x + sz * 0.866, y + sz * 0.5);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          for (let i = 0; i < count; i++) {
+            const rx = anchorX + (rng() - 0.5) * 550 * p.scale;
+            const ry = anchorY + (rng() - 0.5) * 450 * p.scale;
+            drawCube(rx, ry, boxSize * (0.6 + rng() * 0.6));
+          }
+        }
+      },
+      {
+        id: "nordic_leaves",
+        name: "北歐植物意象",
+        cat: "playful",
+        desc: "文青插畫風的簡約植物枝葉剪影，帶來自然清新的有機生命力。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          function drawStem(bx, by, length, dir) {
+            ctx.strokeStyle = p.colors[2];
+            ctx.lineWidth = 3 * p.scale;
+            ctx.beginPath();
+            ctx.moveTo(bx, by);
+            const cx = bx + dir * 100 * p.scale;
+            const cy = by - length;
+            ctx.quadraticCurveTo(bx, by - length * 0.5, cx, cy);
+            ctx.stroke();
+
+            const leafCount = 8;
+            for (let i = 1; i <= leafCount; i++) {
+              const t = i / (leafCount + 1);
+              const lx = bx + (cx - bx) * t;
+              const ly = by + (cy - by) * t;
+              
+              ctx.fillStyle = (i % 2 === 0 ? p.colors[1] : p.colors[3]) + "DD";
+              ctx.beginPath();
+              ctx.ellipse(lx + (i % 2 ? 25 : -25) * p.scale, ly, 22 * p.scale, 10 * p.scale, (i % 2 ? 0.5 : -0.5), 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
+          drawStem(w * 0.88, h, h * 0.8, -1);
+          drawStem(w * 0.96, h, h * 0.6, -1);
+        }
+      },
+      {
+        id: "abstract_bokeh",
+        name: "光斑夢幻散焦 (Bokeh)",
+        cat: "minimal",
+        desc: "柔和浮動的半透明圓形光斑與層次，適合浪漫感性與故事敘述情境。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const count = Math.floor(p.density * 1.5) + 10;
+          for (let i = 0; i < count; i++) {
+            const x = rng() * w;
+            const y = rng() * h;
+            const radius = (50 + rng() * 180) * p.scale;
+            const color = p.colors[Math.floor(rng() * 3) + 1];
+
+            const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            g.addColorStop(0, color + "66");
+            g.addColorStop(0.7, color + "22");
+            g.addColorStop(1, color + "00");
+
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      },
+      {
+        id: "origami_facets",
+        name: "日系摺紙刻面",
+        cat: "artistic",
+        desc: "Low-Poly 風格的低多邊形切面組合，呈現幾何摺紙般的立體光影。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const cols = 7;
+          const rows = 5;
+          const cellW = w / cols;
+          const cellH = h / rows;
+
+          const points = [];
+          for (let r = 0; r <= rows; r++) {
+            points[r] = [];
+            for (let c = 0; c <= cols; c++) {
+              const jx = (c === 0 || c === cols) ? 0 : (rng() - 0.5) * cellW * 0.6;
+              const jy = (r === 0 || r === rows) ? 0 : (rng() - 0.5) * cellH * 0.6;
+              points[r][c] = { x: c * cellW + jx, y: r * cellH + jy };
+            }
+          }
+
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const p1 = points[r][c];
+              const p2 = points[r][c + 1];
+              const p3 = points[r + 1][c];
+              const p4 = points[r + 1][c + 1];
+
+              ctx.fillStyle = p.colors[Math.floor(rng() * 3)] + "55";
+              ctx.beginPath();
+              ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
+              ctx.closePath();
+              ctx.fill();
+
+              ctx.fillStyle = p.colors[Math.floor(rng() * 4)] + "66";
+              ctx.beginPath();
+              ctx.moveTo(p2.x, p2.y); ctx.lineTo(p4.x, p4.y); ctx.lineTo(p3.x, p3.y);
+              ctx.closePath();
+              ctx.fill();
+            }
+          }
+        }
+      },
+      {
+        id: "corporate_clean_frame",
+        name: "精準專業邊框",
+        cat: "business",
+        desc: "金融投資、年度彙報標準版型，具備俐落邊界卡片與焦點裝飾。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const pad = 36 * p.scale;
+          ctx.strokeStyle = p.colors[1];
+          ctx.lineWidth = 1;
+          ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
+
+          const corner = 24 * p.scale;
+          ctx.strokeStyle = p.colors[3];
+          ctx.lineWidth = 3;
+
+          ctx.beginPath();
+          ctx.moveTo(pad, pad + corner); ctx.lineTo(pad, pad); ctx.lineTo(pad + corner, pad);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(w - pad, h - pad - corner); ctx.lineTo(w - pad, h - pad); ctx.lineTo(w - pad - corner, h - pad);
+          ctx.stroke();
+
+          ctx.fillStyle = p.colors[2];
+          ctx.fillRect(pad + 30, pad, 120 * p.scale, 4);
+        }
+      },
+      {
+        id: "sound_frequencies",
+        name: "音頻聲波頻譜",
+        cat: "artistic",
+        desc: "如音樂節奏跳動的等高聲波柱狀圖，表現流暢節奏與數據傳遞感。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const bars = Math.floor(p.density * 2) + 20;
+          const barW = (w * 0.4) / bars;
+          const startX = w * 0.55;
+          const baseY = h * 0.55;
+
+          for (let i = 0; i < bars; i++) {
+            const bh = Math.sin((i / bars) * Math.PI) * (180 * p.scale) * (0.3 + rng() * 0.7);
+            const x = startX + i * barW;
+            ctx.fillStyle = (i % 3 === 0) ? p.colors[3] : p.colors[1];
+            ctx.fillRect(x, baseY - bh / 2, barW * 0.7, bh);
+          }
+        }
+      },
+      {
+        id: "zen_brush_stroke",
+        name: "文人筆觸飛白",
+        cat: "minimal",
+        desc: "極簡大寫意的書法水墨感飛白，充滿東方禪意思維與藝術氣息。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.save();
+          ctx.fillStyle = p.colors[1] + "CC";
+          ctx.beginPath();
+          const startY = h * 0.7;
+          ctx.moveTo(w * 0.4, startY);
+          ctx.bezierCurveTo(w * 0.6, startY - 140 * p.scale, w * 0.8, startY + 60 * p.scale, w * 0.98, startY - 40 * p.scale);
+          ctx.lineTo(w * 0.95, startY + 50 * p.scale);
+          ctx.bezierCurveTo(w * 0.75, startY + 120 * p.scale, w * 0.55, startY - 20 * p.scale, w * 0.4, startY + 20 * p.scale);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = p.colors[3];
+          ctx.fillRect(w * 0.9, h * 0.15, 26 * p.scale, 26 * p.scale);
+          ctx.restore();
+        }
+      },
+      {
+        id: "hex_honeycomb",
+        name: "生醫六角蜂巢",
+        cat: "business",
+        desc: "高科技、生化醫療必備的無縫蜂巢六角矩陣，展現嚴謹科學感。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const r = 28 * p.scale;
+          const dx = r * 1.5;
+          const dy = Math.sqrt(3) * r;
+
+          function drawHex(hx, hy) {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+              const a = (i * Math.PI) / 3;
+              const x = hx + r * Math.cos(a);
+              const y = hy + r * Math.sin(a);
+              if (i === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+          }
+
+          for (let x = w * 0.45; x < w + r; x += dx) {
+            for (let y = h * 0.3; y < h + r; y += dy) {
+              const offset = ((x / dx) % 2 === 0) ? 0 : dy / 2;
+              const prob = rng();
+              if (prob > 0.4) {
+                drawHex(x, y + offset);
+                ctx.strokeStyle = p.colors[1] + "77";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                if (prob > 0.85) {
+                  ctx.fillStyle = p.colors[3] + "55";
+                  ctx.fill();
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        id: "pastel_terrazzo",
+        name: "莫蘭迪磨石子 (Terrazzo)",
+        cat: "artistic",
+        desc: "細緻灑落的碎石幾何顆粒，文創設計與生活風格簡報最佳拍檔。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const pieces = Math.floor(p.density * 2.5) + 30;
+          for (let i = 0; i < pieces; i++) {
+            const px = rng() * w;
+            const py = rng() * h;
+            const sz = (8 + rng() * 22) * p.scale;
+            ctx.fillStyle = p.colors[Math.floor(rng() * 4)];
+
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(rng() * Math.PI);
+            ctx.beginPath();
+            ctx.moveTo(-sz/2, -sz/3);
+            ctx.lineTo(sz/2, -sz/2);
+            ctx.lineTo(sz/3, sz/2);
+            ctx.lineTo(-sz/2, sz/4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      },
+      {
+        id: "chalkboard_sketch",
+        name: "黑板微光塗鴉",
+        cat: "playful",
+        desc: "手繪風虛線與隨手幾何標註，彷彿教室白板上的靈感激盪。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.strokeStyle = p.colors[2];
+          ctx.lineWidth = 2 * p.scale;
+          ctx.setLineDash([6, 6]);
+
+          ctx.beginPath();
+          ctx.arc(w * 0.78, h * 0.4, 110 * p.scale, 0, Math.PI * 1.8);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+          ctx.strokeStyle = p.colors[3];
+          ctx.beginPath();
+          ctx.moveTo(w * 0.72, h * 0.38);
+          ctx.lineTo(w * 0.76, h * 0.44);
+          ctx.lineTo(w * 0.85, h * 0.32);
+          ctx.stroke();
+        }
+      },
+      {
+        id: "golden_ratio_spiral",
+        name: "黃金比例螺線",
+        cat: "minimal",
+        desc: "斐波那契黃金螺旋線，象徵自然界至高美學與精密構圖法則。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.strokeStyle = p.colors[2];
+          ctx.lineWidth = 1.5 * p.scale;
+
+          let cx = w * 0.72;
+          let cy = h * 0.55;
+          let a = 0;
+          let r = 8 * p.scale;
+
+          ctx.beginPath();
+          for (let i = 0; i < 280; i++) {
+            a += 0.1;
+            r = Math.pow(1.025, i) * 6 * p.scale;
+            const x = cx + r * Math.cos(a + (p.angle * Math.PI / 180));
+            const y = cy + r * Math.sin(a + (p.angle * Math.PI / 180));
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+
+          ctx.fillStyle = p.colors[3];
+          ctx.beginPath();
+          ctx.arc(cx, cy, 5 * p.scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      },
+      {
+        id: "subtle_paper_fold",
+        name: "微陰影光影折角",
+        cat: "minimal",
+        desc: "如精密厚磅紙張折疊後投射的細緻環境光影，高雅沉靜。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.save();
+          const grad = ctx.createLinearGradient(0, 0, w, h);
+          grad.addColorStop(0, p.colors[0]);
+          grad.addColorStop(0.5, p.colors[1]);
+          grad.addColorStop(0.505, p.colors[2] + "88");
+          grad.addColorStop(1, p.colors[0]);
+
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, w, h);
+          ctx.restore();
+        }
+      },
+      {
+        id: "glitch_cyber",
+        name: "故障藝術條紋 (Glitch)",
+        cat: "business",
+        desc: "電子訊號跳格與賽博故障水平錯位，極度具備前衛次文化張力。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const bars = Math.floor(p.density * 1.2) + 12;
+          for (let i = 0; i < bars; i++) {
+            const by = rng() * h;
+            const bh = (3 + rng() * 25) * p.scale;
+            const bx = w * 0.4 + rng() * (w * 0.6);
+            const bw = (40 + rng() * 260) * p.scale;
+
+            ctx.fillStyle = rng() > 0.4 ? p.colors[2] + "99" : p.colors[3];
+            ctx.fillRect(bx, by, bw, bh);
+          }
+        }
+      },
+      {
+        id: "warm_gradient_mesh",
+        name: "多點漸層網格 (Mesh)",
+        cat: "minimal",
+        desc: "多點平滑過渡融合的多重色球，呈現如蘋果發表會等級的視覺質地。",
+        render: (ctx, w, h, p, rng) => {
+          ctx.fillStyle = p.colors[0];
+          ctx.fillRect(0, 0, w, h);
+
+          const points = [
+            { x: w * 0.8, y: h * 0.2, c: p.colors[1], r: w * 0.5 },
+            { x: w * 0.9, y: h * 0.8, c: p.colors[2], r: w * 0.45 },
+            { x: w * 0.3, y: h * 0.9, c: p.colors[3], r: w * 0.35 }
+          ];
+
+          points.forEach(pt => {
+            const rad = pt.r * p.scale;
+            const g = ctx.createRadialGradient(pt.x, pt.y, 10, pt.x, pt.y, rad);
+            g.addColorStop(0, pt.c + "AA");
+            g.addColorStop(1, pt.c + "00");
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, w, h);
+          });
+        }
+      }
+    ];
+
+    /**
+     * 應用程式整體狀態
+     */
+    const state = {
+      aspectRatio: "16:9",
+      currentStyleId: STYLES[0].id,
+      seed: 48291,
+      density: 12,
+      scale: 1.0,
+      angle: 45,
+      noise: 15,
+      blur: 0,
+      colors: [...PALETTES[0].colors],
+      showSafeGrid: false,
+      showMockup: true,
+      mockTextTheme: "dark"
+    };
+
+    // DOM 元素引用
+    const canvas = document.getElementById("mainCanvas");
+    const ctx = canvas.getContext("2d");
+    const previewWrapper = document.getElementById("previewWrapper");
+    const styleList = document.getElementById("styleList");
+    const styleCount = document.getElementById("styleCount");
+    const styleSearch = document.getElementById("styleSearch");
+    const categoryFilter = document.getElementById("categoryFilter");
+    const presetPalettesContainer = document.getElementById("presetPalettes");
+
+    // 控制項 DOM
+    const ratio169Btn = document.getElementById("ratio169");
+    const ratio43Btn = document.getElementById("ratio43");
+    const toggleSafeGrid = document.getElementById("toggleSafeGrid");
+    const toggleDemoText = document.getElementById("toggleDemoText");
+    const safeAreaBox = document.getElementById("safeAreaBox");
+    const mockupContent = document.getElementById("mockupContent");
+    const canvasResolutionText = document.getElementById("canvasResolutionText");
+
+    const color1 = document.getElementById("color1");
+    const color2 = document.getElementById("color2");
+    const color3 = document.getElementById("color3");
+    const color4 = document.getElementById("color4");
+
+    const paramDensity = document.getElementById("paramDensity");
+    const paramScale = document.getElementById("paramScale");
+    const paramAngle = document.getElementById("paramAngle");
+    const paramNoise = document.getElementById("paramNoise");
+    const paramBlur = document.getElementById("paramBlur");
+    const paramSeed = document.getElementById("paramSeed");
+
+    const valDensity = document.getElementById("valDensity");
+    const valScale = document.getElementById("valScale");
+    const valAngle = document.getElementById("valAngle");
+    const valNoise = document.getElementById("valNoise");
+    const valBlur = document.getElementById("valBlur");
+
+    const currentStyleName = document.getElementById("currentStyleName");
+    const currentStyleDesc = document.getElementById("currentStyleDesc");
+
+    /**
+     * 初始化
+     */
+    function init() {
+      styleCount.textContent = STYLES.length;
+      renderStyleList();
+      renderPresetPalettes();
+      syncUIWithState();
+      updateCanvasResolution();
+      draw();
+      bindEvents();
+    }
+
+    /**
+     * 更新畫布尺寸並重繪
+     */
+    function updateCanvasResolution() {
+      if (state.aspectRatio === "16:9") {
+        canvas.width = 1920;
+        canvas.height = 1080;
+        previewWrapper.style.aspectRatio = "16/9";
+        canvasResolutionText.textContent = "1920 × 1080 px (16:9)";
+      } else {
+        canvas.width = 1440;
+        canvas.height = 1080;
+        previewWrapper.style.aspectRatio = "4/3";
+        canvasResolutionText.textContent = "1440 × 1080 px (4:3)";
+      }
+    }
+
+    /**
+     * 繪製核心流程
+     */
+    function draw() {
+      const w = canvas.width;
+      const h = canvas.height;
+      const rng = createPRNG(state.seed);
+
+      ctx.clearRect(0, 0, w, h);
+
+      if (state.blur > 0) {
+        ctx.filter = `blur(${state.blur}px)`;
+      } else {
+        ctx.filter = "none";
+      }
+
+      const styleObj = STYLES.find(s => s.id === state.currentStyleId) || STYLES[0];
+      
+      try {
+        styleObj.render(ctx, w, h, state, rng);
+      } catch (err) {
+        console.error("風格渲染出錯:", err);
+      }
+
+      ctx.filter = "none";
+
+      if (state.noise > 0) {
+        applyNoise(ctx, w, h, state.noise, rng);
+      }
+    }
+
+    /**
+     * 產生文青磨砂膠卷雜訊
+     */
+    function applyNoise(targetCtx, w, h, amount, rng) {
+      const imgData = targetCtx.getImageData(0, 0, w, h);
+      const data = imgData.data;
+      const factor = (amount / 100) * 45;
+
+      for (let i = 0; i < data.length; i += 4) {
+        if (rng() < 0.6) {
+          const n = (rng() - 0.5) * factor;
+          data[i] = Math.min(255, Math.max(0, data[i] + n));
+          data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + n));
+          data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + n));
+        }
+      }
+      targetCtx.putImageData(imgData, 0, 0);
+    }
+
+    /**
+     * 渲染風格選單卡片
+     */
+    function renderStyleList(filterCat = "all", searchTerm = "") {
+      styleList.innerHTML = "";
+      
+      const filtered = STYLES.filter(s => {
+        const matchesCat = filterCat === "all" || s.cat === filterCat;
+        const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                              s.desc.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesCat && matchesSearch;
+      });
+
+      filtered.forEach(style => {
+        const isActive = style.id === state.currentStyleId;
+        const card = document.createElement("button");
+        card.className = `w-full text-left p-3 rounded-lg border transition-all duration-150 flex flex-col gap-1 ${
+          isActive 
+            ? "border-blue-600 bg-blue-50/70 shadow-sm ring-1 ring-blue-500" 
+            : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 bg-white"
+        }`;
+        
+        card.innerHTML = `
+          <div class="flex items-center justify-between w-full">
+            <span class="font-bold text-xs ${isActive ? "text-blue-700" : "text-slate-800"}">${style.name}</span>
+            <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded ${
+              isActive ? "bg-blue-200/60 text-blue-800" : "bg-slate-100 text-slate-500"
+            }">${style.cat}</span>
+          </div>
+          <p class="text-[11px] text-slate-500 line-clamp-1">${style.desc}</p>
+        `;
+
+        card.addEventListener("click", () => {
+          state.currentStyleId = style.id;
+          currentStyleName.textContent = style.name;
+          currentStyleDesc.textContent = style.desc;
+          renderStyleList(filterCat, searchTerm);
+          draw();
+        });
+
+        styleList.appendChild(card);
+      });
+    }
+
+    /**
+     * 渲染預設色盤
+     */
+    function renderPresetPalettes() {
+      presetPalettesContainer.innerHTML = "";
+      PALETTES.forEach((pal) => {
+        const btn = document.createElement("button");
+        btn.className = "p-1.5 rounded border border-slate-200 hover:border-blue-400 bg-white flex flex-col gap-1 items-center transition group";
+        btn.title = pal.name;
+
+        let dotsHtml = `<div class="flex gap-0.5 w-full h-3 rounded overflow-hidden">`;
+        pal.colors.forEach(c => {
+          dotsHtml += `<div class="flex-1 h-full" style="background-color: ${c}"></div>`;
+        });
+        dotsHtml += `</div>`;
+
+        btn.innerHTML = `
+          ${dotsHtml}
+          <span class="text-[10px] text-slate-600 truncate w-full text-center group-hover:text-blue-600">${pal.name}</span>
+        `;
+
+        btn.addEventListener("click", () => {
+          state.colors = [...pal.colors];
+          syncColorInputs();
+          draw();
+        });
+
+        presetPalettesContainer.appendChild(btn);
+      });
+    }
+
+    /**
+     * 同步 UI 控件數值與 State
+     */
+    function syncUIWithState() {
+      syncColorInputs();
+      paramDensity.value = state.density;
+      valDensity.textContent = state.density;
+
+      paramScale.value = state.scale;
+      valScale.textContent = state.scale + "x";
+
+      paramAngle.value = state.angle;
+      valAngle.textContent = state.angle + "°";
+
+      paramNoise.value = state.noise;
+      valNoise.textContent = state.noise + "%";
+
+      paramBlur.value = state.blur;
+      valBlur.textContent = state.blur + "px";
+
+      paramSeed.value = state.seed;
+    }
+
+    function syncColorInputs() {
+      color1.value = state.colors[0];
+      color2.value = state.colors[1];
+      color3.value = state.colors[2];
+      color4.value = state.colors[3];
+    }
+
+    /**
+     * 吐司通知
+     */
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      const toastMsg = document.getElementById("toastMsg");
+      toastMsg.textContent = message;
+      toast.classList.remove("translate-y-20", "opacity-0");
+      setTimeout(() => {
+        toast.classList.add("translate-y-20", "opacity-0");
+      }, 2500);
+    }
+
+    /**
+     * 綁定所有互動事件
+     */
+    function bindEvents() {
+      ratio169Btn.addEventListener("click", () => {
+        state.aspectRatio = "16:9";
+        ratio169Btn.className = "ratio-btn px-2.5 py-1 rounded bg-blue-600 text-white shadow-sm font-semibold";
+        ratio43Btn.className = "ratio-btn px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600";
+        updateCanvasResolution();
+        draw();
+      });
+
+      ratio43Btn.addEventListener("click", () => {
+        state.aspectRatio = "4:3";
+        ratio43Btn.className = "ratio-btn px-2.5 py-1 rounded bg-blue-600 text-white shadow-sm font-semibold";
+        ratio169Btn.className = "ratio-btn px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600";
+        updateCanvasResolution();
+        draw();
+      });
+
+      toggleSafeGrid.addEventListener("change", (e) => {
+        state.showSafeGrid = e.target.checked;
+        if (state.showSafeGrid) {
+          safeAreaBox.classList.remove("hidden");
+        } else {
+          safeAreaBox.classList.add("hidden");
+        }
+      });
+
+      toggleDemoText.addEventListener("change", (e) => {
+        state.showMockup = e.target.checked;
+        mockupContent.style.opacity = state.showMockup ? "1" : "0";
+      });
+
+      const mockTitle = document.getElementById("mockupTitle");
+      const mockSub = document.getElementById("mockupSubtitle");
+      const mockBadge = document.getElementById("mockupBadge");
+      
+      document.getElementById("mockTextDark").addEventListener("click", () => {
+        state.mockTextTheme = "dark";
+        mockTitle.className = "text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight text-slate-900 drop-shadow-sm mb-2";
+        mockSub.className = "text-sm lg:text-base text-slate-600 leading-relaxed font-normal";
+        mockBadge.className = "inline-block px-3 py-1 bg-black/10 backdrop-blur-sm rounded-md text-xs font-semibold tracking-wider uppercase mb-3 text-slate-800";
+      });
+
+      document.getElementById("mockTextLight").addEventListener("click", () => {
+        state.mockTextTheme = "light";
+        mockTitle.className = "text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight text-white drop-shadow mb-2";
+        mockSub.className = "text-sm lg:text-base text-slate-200 leading-relaxed font-normal drop-shadow-sm";
+        mockBadge.className = "inline-block px-3 py-1 bg-white/20 backdrop-blur-sm rounded-md text-xs font-semibold tracking-wider uppercase mb-3 text-white";
+      });
+
+      paramDensity.addEventListener("input", (e) => {
+        state.density = parseInt(e.target.value);
+        valDensity.textContent = state.density;
+        draw();
+      });
+
+      paramScale.addEventListener("input", (e) => {
+        state.scale = parseFloat(e.target.value);
+        valScale.textContent = state.scale + "x";
+        draw();
+      });
+
+      paramAngle.addEventListener("input", (e) => {
+        state.angle = parseInt(e.target.value);
+        valAngle.textContent = state.angle + "°";
+        draw();
+      });
+
+      paramNoise.addEventListener("input", (e) => {
+        state.noise = parseInt(e.target.value);
+        valNoise.textContent = state.noise + "%";
+        draw();
+      });
+
+      paramBlur.addEventListener("input", (e) => {
+        state.blur = parseInt(e.target.value);
+        valBlur.textContent = state.blur + "px";
+        draw();
+      });
+
+      [color1, color2, color3, color4].forEach((input, index) => {
+        input.addEventListener("input", (e) => {
+          state.colors[index] = e.target.value;
+          draw();
+        });
+      });
+
+      document.getElementById("btnShuffleColors").addEventListener("click", () => {
+        const randomPalette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+        state.colors = [...randomPalette.colors];
+        syncColorInputs();
+        draw();
+        showToast(`已套用「${randomPalette.name}」色盤`);
+      });
+
+      document.getElementById("btnNewSeed").addEventListener("click", () => {
+        state.seed = Math.floor(Math.random() * 999999);
+        paramSeed.value = state.seed;
+        draw();
+      });
+
+      document.getElementById("btnApplySeed").addEventListener("click", () => {
+        state.seed = parseInt(paramSeed.value) || 12345;
+        draw();
+      });
+
+      const randomizeAll = () => {
+        state.currentStyleId = STYLES[Math.floor(Math.random() * STYLES.length)].id;
+        state.seed = Math.floor(Math.random() * 999999);
+        const randomPalette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+        state.colors = [...randomPalette.colors];
+        state.angle = Math.floor(Math.random() * 360);
+        state.density = Math.floor(Math.random() * 30) + 5;
+        
+        const styleObj = STYLES.find(s => s.id === state.currentStyleId);
+        currentStyleName.textContent = styleObj.name;
+        currentStyleDesc.textContent = styleObj.desc;
+
+        syncUIWithState();
+        renderStyleList();
+        draw();
+        showToast("已隨機生成全新靈感底圖！");
+      };
+
+      document.getElementById("btnRandomize").addEventListener("click", randomizeAll);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "r" || e.key === "R") {
+          if (document.activeElement.tagName !== "INPUT") {
+            randomizeAll();
+          }
+        }
+      });
+
+      document.getElementById("btnResetParams").addEventListener("click", () => {
+        state.density = 12;
+        state.scale = 1.0;
+        state.angle = 45;
+        state.noise = 15;
+        state.blur = 0;
+        syncUIWithState();
+        draw();
+        showToast("參數已重設為預設值");
+      });
+
+      categoryFilter.querySelectorAll(".cat-pill").forEach(btn => {
+        btn.addEventListener("click", () => {
+          categoryFilter.querySelectorAll(".cat-pill").forEach(b => {
+            b.className = "cat-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:bg-slate-100";
+          });
+          btn.className = "cat-pill active px-2.5 py-1 rounded-md font-medium bg-slate-900 text-white";
+          renderStyleList(btn.dataset.cat, styleSearch.value);
+        });
+      });
+
+      styleSearch.addEventListener("input", (e) => {
+        const activeCat = categoryFilter.querySelector(".cat-pill.active").dataset.cat;
+        renderStyleList(activeCat, e.target.value);
+      });
+
+      document.getElementById("btnExportPNG").addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.download = `SlideCraft_${state.currentStyleId}_${state.aspectRatio.replace(":", "-")}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        showToast("已成功下載高解析度 PNG 底圖！");
+      });
+
+      document.getElementById("btnExportJPG").addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.download = `SlideCraft_${state.currentStyleId}_${state.aspectRatio.replace(":", "-")}.jpg`;
+        link.href = canvas.toDataURL("image/jpeg", 0.95);
+        link.click();
+        showToast("已成功下載 JPG 底圖！");
+      });
+
+      document.getElementById("btnExportPPTX").addEventListener("click", () => {
+        try {
+          const pptx = new PptxGenJS();
+          
+          if (state.aspectRatio === "16:9") {
+            pptx.layout = "LAYOUT_16x9";
+          } else {
+            pptx.layout = "LAYOUT_4x3";
+          }
+
+          const slide = pptx.addSlide();
+          const dataUrl = canvas.toDataURL("image/png");
+
+          slide.addImage({
+            data: dataUrl,
+            x: 0,
+            y: 0,
+            w: "100%",
+            h: "100%"
+          });
+
+          if (state.showMockup) {
+            slide.addText("ANNUAL KEYNOTE REPORT", {
+              x: 0.8,
+              y: 1.0,
+              w: 5.0,
+              h: 0.4,
+              fontSize: 12,
+              bold: true,
+              color: state.mockTextTheme === "dark" ? "1E293B" : "FFFFFF"
+            });
+
+            slide.addText("探索未來的商業想像力", {
+              x: 0.8,
+              y: 1.5,
+              w: 7.5,
+              h: 0.8,
+              fontSize: 28,
+              bold: true,
+              color: state.mockTextTheme === "dark" ? "0F172A" : "FFFFFF"
+            });
+
+            slide.addText("透過動態生成式背景底圖，為您的簡報設計建立更深刻、富有層次感的視覺語言與品牌印象。", {
+              x: 0.8,
+              y: 2.4,
+              w: 6.5,
+              h: 1.0,
+              fontSize: 14,
+              color: state.mockTextTheme === "dark" ? "475569" : "E2E8F0"
+            });
+          }
+
+          const fileName = `SlideCraft_Presentation_${state.aspectRatio.replace(":", "-")}.pptx`;
+          pptx.writeFile({ fileName: fileName });
+          showToast("已成功產生並打包 .PPTX 簡報檔案！");
+        } catch (e) {
+          console.error(e);
+          showToast("PPTX 匯出失敗，請檢查瀏覽器支援性");
+        }
+      });
+    }
+
+    window.onload = function() {
+      init();
+    };
+  </script>
+</body>
+</html>
